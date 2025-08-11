@@ -150,9 +150,13 @@ def buscar_cedente():
     termo = entry_busca.get().strip().lower()
     for i in tabela_busca.get_children():
         tabela_busca.delete(i)
+
     if not termo:
+        label_media.config(text="Média de dias: -")
         return
+
     filtrados = [r for r in registros if termo in r["cedente"].lower() or termo in r["codigo"].lower()]
+    
     for r in filtrados:
         tabela_busca.insert("", "end", values=(
             r["codigo"],
@@ -162,6 +166,12 @@ def buscar_cedente():
             r["embarque"].strftime("%d/%m/%Y"),
             r["dias"]
         ))
+
+    if filtrados:
+        media_dias = mean([r["dias"] for r in filtrados])
+        label_media.config(text=f"Média de dias: {media_dias:.2f}")
+    else:
+        label_media.config(text="Média de dias: -")
 
 # ---------------- Exportar Excel ----------------
 def exportar_excel():
@@ -238,6 +248,10 @@ entry_busca = tk.Entry(aba_busca, width=40)
 entry_busca.pack()
 tk.Button(aba_busca, text="Buscar", command=buscar_cedente).pack(pady=5)
 
+# Label para mostrar média
+label_media = tk.Label(aba_busca, text="Média de dias: -")
+label_media.pack(pady=5)
+
 tabela_busca = ttk.Treeview(aba_busca, columns=colunas, show="headings", height=15)
 for col in colunas:
     tabela_busca.heading(col, text=col)
@@ -249,3 +263,4 @@ carregar_dados()
 atualizar_tabela_cadastro()
 
 janela.mainloop()
+
