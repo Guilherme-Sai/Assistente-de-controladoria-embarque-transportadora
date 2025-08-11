@@ -1,0 +1,202 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+from datetime import datetime
+from statistics import mean
+import pandas as pd
+import matplotlib.pyplot as plt
+import json
+import os
+
+ARQUIVO_DADOS = "registros.json"
+registros = []
+
+# ---------------- Funções de Persistência ----------------
+def salvar_dados():
+    with open(ARQUIVO_DADOS, "w", encoding="utf-8") as f:
+        json.dump([
+            {
+                "cedente": r["cedente"],
+                "transportadora": r["transportadora"],
+                "emissao": r["emissao"].strftime("%d/%m/%Y"),
+                "embarque": r["embarque"].strftime("%d/%m/%Y"),
+                "dias": r["dias"]
+            }
+            for r in registros
+        ], f, ensure_ascii=False, indent=4)
+
+def carregar_dados():
+    global registros
+    if os.path.exists(ARQUIVO_DADOS):
+        with open(ARQUIVO_DADOS, "r", encoding="utf-8") as f:
+            dados = json.load(f)
+            registros = [
+                {
+                    "cedente": d["cedente"],
+                    "transportadora": d["transportadora"],
+                    "emissao": datetime.strptime(d["emissao"], "%d/%m/%Y"),
+                    "embarque": datetime.strptime(d["embarque"], "%d/%m/%Y"),
+                    "dias": d["dias"]
+                }
+                for d in dados
+            ]
+
+# ---------------- Funções Principais ----------------
+def adicionar_registro():
+    cedente = entry_cedente.get()
+    transportadora = entry_transportadora.get()
+    data_emissao = entry_emissao.get()
+    data_embarque = entry_embarque.get()
+    try:
+        emissao = datetime.strptime(data_emissao, "%d/%m/%Y")
+        embarque = datetime.strptime(data_embarque, "%d/%m/%Y")
+        dias = (embarque - emissao).days
+        if dias < 0:
+            messagebox.showerror("Erro", "Data de embarque não pode ser anterior à emissão.")
+            return
+        registro = {
+            "cedente": cedente,
+            "transportadora": transportadora,
+            "emissao": emissao,
+            "embarque": embarque,
+            "dias": dias
+        }
+        registros.append(registro)
+        salvar_dados()
+        atualizar_tabela()
+        limpar_campos()
+    except ValueError:
+        messagebox.showerror("Erro", "Formato de data inválido. Use DD/MM/AAAA.")
+
+def atualizar_tabela(filtrados=None):
+    for i in tabela.get_children():
+        tabela.delete(i)
+    data = filtrados if filtrados is not None else registros
+    for idx, r in enumerate(data):
+        tabela.insert("", "end", iid=idx, values=(
+            r["cedente"],
+            r["transportadora"],
+            r["emissao"].strftime("%d/%m/%Y"),
+            r["embarque"].strftime("%d/%m/%Y"),
+            r["dias"]
+        ))
+
+def limpar_campos():
+    entry_cedente.delete(0, tk.END)
+    entry_transportadora.delete(0, tk.END)
+    entry_emissao.delete(0, tk.END)
+    entry_embarque.delete(0, tk.END)
+
+def editar_registro():
+    selected = tabela.selection()
+    if not selected:
+        messagebox.showwarning("Editar", "Selecione um registro para editar.")
+        return
+    idx = int(selected[0])
+    try:
+        emissao = datetime.strptime(entry_emissao.get(), "%d/%m/%Y")
+        embarque = datetime.strptime(entry_embarque.get(), "%d/%m/%Y")
+        dias = (embarque - emissao).days
+        if dias < 0:
+            messagebox.showerror("Erro", "Data de embarque não pode ser anterior à emissão.")
+            return
+        registros[idx] = {
+            "cedente": entry_cedente.get(),
+            "transportadora": entry_transportadora.get(),
+            "emissao": emissao,
+            "embarque": embarque,
+            "dias": dias
+        }
+        salvar_dados()
+        atualizar_tabela()
+        limpar_campos()
+    except ValueError:
+        messagebox.showerror("Erro", "Formato de data inválido. Use DD/MM/AAAA.")
+
+def deletar_registro():
+    selected = tabela.selection()
+    if not selected:
+        messagebox.showwarning("Deletar", "Selecione um registro para deletar.")
+        return
+    idx = int(selected[0])
+    registros.pop(idx)
+    salvar_dados()
+    atualizar_tabela()
+
+def selecionar_registro(event):
+    selected = tabela.selection()
+    if not selected:
+        return
+    idx = int(selected[0])
+    r = registros[idx]
+    entry_cedente.delete(0, tk.END)
+    entry_cedente.insert(0, r["cedente"])
+    entry_transportadora.delete(0, tk.END)
+    entry_transportadora.insert(0, r["transportadora"])
+    entry_emissao.delete(0, tk.END)
+    entry_emissao.insert(0, r["emissao"].strftime("%d/%m/%Y"))
+    entry_embarque.delete(0, tk.END)
+    entry_embarque.insert(0, r["embarque"].strftime("%d/%m/%Y"))
+
+def buscar_cedente():
+    termo = entry_busca.get().strip().lower()
+    if not termo:
+        atualizar_tabela()
+        return
+    filtrados = [r for r in registros if termo in r["cedente"].lower() or termo in str(r["cedente"])]
+    atualizar_tabela(filtrados)
+
+# ---------------- Interface ----------------
+janela = tk.Tk()
+janela.title("Controle de Emissão e Embarque")
+janela.geometry("1100x650")
+
+notebook = ttk.Notebook(janela)
+notebook.pack(fill="both", expand=True)
+
+# Aba 1 - Cadastro
+aba_cadastro = tk.Frame(notebook)
+notebook.add(aba_cadastro, text="Cadastro")
+
+frame_top = tk.Frame(aba_cadastro)
+frame_top.pack(pady=10)
+tk.Label(frame_top, text="Cedente").grid(row=0, column=0)
+entry_cedente = tk.Entry(frame_top, width=20)
+entry_cedente.grid(row=0, column=1)
+tk.Label(frame_top, text="Transportadora").grid(row=0, column=2)
+entry_transportadora = tk.Entry(frame_top, width=20)
+entry_transportadora.grid(row=0, column=3)
+tk.Label(frame_top, text="Emissão (DD/MM/AAAA)").grid(row=0, column=4)
+entry_emissao = tk.Entry(frame_top, width=15)
+entry_emissao.grid(row=0, column=5)
+tk.Label(frame_top, text="Embarque (DD/MM/AAAA)").grid(row=0, column=6)
+entry_embarque = tk.Entry(frame_top, width=15)
+entry_embarque.grid(row=0, column=7)
+
+frame_buttons = tk.Frame(aba_cadastro)
+frame_buttons.pack()
+tk.Button(frame_buttons, text="Adicionar", command=adicionar_registro).grid(row=0, column=0, padx=5)
+tk.Button(frame_buttons, text="Editar", command=editar_registro).grid(row=0, column=1, padx=5)
+tk.Button(frame_buttons, text="Deletar", command=deletar_registro).grid(row=0, column=2, padx=5)
+
+colunas = ("Cedente", "Transportadora", "Emissão", "Embarque", "Dias")
+tabela = ttk.Treeview(aba_cadastro, columns=colunas, show="headings", height=15)
+for col in colunas:
+    tabela.heading(col, text=col)
+    tabela.column(col, anchor="center", width=150)
+tabela.pack(pady=10, fill="both", expand=True)
+tabela.bind("<<TreeviewSelect>>", selecionar_registro)
+
+# Aba 2 - Busca
+aba_busca = tk.Frame(notebook)
+notebook.add(aba_busca, text="Buscar Cedente")
+
+tk.Label(aba_busca, text="Digite nome ou código do cedente:").pack(pady=5)
+entry_busca = tk.Entry(aba_busca, width=40)
+entry_busca.pack()
+tk.Button(aba_busca, text="Buscar", command=buscar_cedente).pack(pady=5)
+
+# Carregar registros salvos
+carregar_dados()
+atualizar_tabela()
+
+janela.mainloop()
