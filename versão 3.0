@@ -1,0 +1,251 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+from datetime import datetime
+from statistics import mean
+import pandas as pd
+import matplotlib.pyplot as plt
+import json
+import os
+
+ARQUIVO_DADOS = "registros.json"
+registros = []
+
+# ---------------- Funções de Persistência ----------------
+def salvar_dados():
+    with open(ARQUIVO_DADOS, "w", encoding="utf-8") as f:
+        json.dump([
+            {
+                "codigo": r["codigo"],
+                "cedente": r["cedente"],
+                "transportadora": r["transportadora"],
+                "emissao": r["emissao"].strftime("%d/%m/%Y"),
+                "embarque": r["embarque"].strftime("%d/%m/%Y"),
+                "dias": r["dias"]
+            }
+            for r in registros
+        ], f, ensure_ascii=False, indent=4)
+
+def carregar_dados():
+    global registros
+    if os.path.exists(ARQUIVO_DADOS):
+        with open(ARQUIVO_DADOS, "r", encoding="utf-8") as f:
+            dados = json.load(f)
+            registros = [
+                {
+                    "codigo": d.get("codigo", ""),
+                    "cedente": d["cedente"],
+                    "transportadora": d["transportadora"],
+                    "emissao": datetime.strptime(d["emissao"], "%d/%m/%Y"),
+                    "embarque": datetime.strptime(d["embarque"], "%d/%m/%Y"),
+                    "dias": d["dias"]
+                }
+                for d in dados
+            ]
+
+# ---------------- Funções de Cadastro ----------------
+def adicionar_registro():
+    codigo = entry_codigo.get()
+    cedente = entry_cedente.get()
+    transportadora = entry_transportadora.get()
+    data_emissao = entry_emissao.get()
+    data_embarque = entry_embarque.get()
+    try:
+        emissao = datetime.strptime(data_emissao, "%d/%m/%Y")
+        embarque = datetime.strptime(data_embarque, "%d/%m/%Y")
+        dias = (embarque - emissao).days
+        if dias < 0:
+            messagebox.showerror("Erro", "Data de embarque não pode ser anterior à emissão.")
+            return
+        registro = {
+            "codigo": codigo,
+            "cedente": cedente,
+            "transportadora": transportadora,
+            "emissao": emissao,
+            "embarque": embarque,
+            "dias": dias
+        }
+        registros.append(registro)
+        salvar_dados()
+        atualizar_tabela_cadastro()
+        limpar_campos()
+    except ValueError:
+        messagebox.showerror("Erro", "Formato de data inválido. Use DD/MM/AAAA.")
+
+def atualizar_tabela_cadastro():
+    for i in tabela_cadastro.get_children():
+        tabela_cadastro.delete(i)
+    for idx, r in enumerate(registros):
+        tabela_cadastro.insert("", "end", iid=idx, values=(
+            r["codigo"],
+            r["cedente"],
+            r["transportadora"],
+            r["emissao"].strftime("%d/%m/%Y"),
+            r["embarque"].strftime("%d/%m/%Y"),
+            r["dias"]
+        ))
+
+def limpar_campos():
+    entry_codigo.delete(0, tk.END)
+    entry_cedente.delete(0, tk.END)
+    entry_transportadora.delete(0, tk.END)
+    entry_emissao.delete(0, tk.END)
+    entry_embarque.delete(0, tk.END)
+
+def editar_registro():
+    selected = tabela_cadastro.selection()
+    if not selected:
+        messagebox.showwarning("Editar", "Selecione um registro para editar.")
+        return
+    idx = int(selected[0])
+    try:
+        emissao = datetime.strptime(entry_emissao.get(), "%d/%m/%Y")
+        embarque = datetime.strptime(entry_embarque.get(), "%d/%m/%Y")
+        dias = (embarque - emissao).days
+        if dias < 0:
+            messagebox.showerror("Erro", "Data de embarque não pode ser anterior à emissão.")
+            return
+        registros[idx] = {
+            "codigo": entry_codigo.get(),
+            "cedente": entry_cedente.get(),
+            "transportadora": entry_transportadora.get(),
+            "emissao": emissao,
+            "embarque": embarque,
+            "dias": dias
+        }
+        salvar_dados()
+        atualizar_tabela_cadastro()
+        limpar_campos()
+    except ValueError:
+        messagebox.showerror("Erro", "Formato de data inválido. Use DD/MM/AAAA.")
+
+def deletar_registro():
+    selected = tabela_cadastro.selection()
+    if not selected:
+        messagebox.showwarning("Deletar", "Selecione um registro para deletar.")
+        return
+    idx = int(selected[0])
+    registros.pop(idx)
+    salvar_dados()
+    atualizar_tabela_cadastro()
+
+def selecionar_registro(event):
+    selected = tabela_cadastro.selection()
+    if not selected:
+        return
+    idx = int(selected[0])
+    r = registros[idx]
+    entry_codigo.delete(0, tk.END)
+    entry_codigo.insert(0, r["codigo"])
+    entry_cedente.delete(0, tk.END)
+    entry_cedente.insert(0, r["cedente"])
+    entry_transportadora.delete(0, tk.END)
+    entry_transportadora.insert(0, r["transportadora"])
+    entry_emissao.delete(0, tk.END)
+    entry_emissao.insert(0, r["emissao"].strftime("%d/%m/%Y"))
+    entry_embarque.delete(0, tk.END)
+    entry_embarque.insert(0, r["embarque"].strftime("%d/%m/%Y"))
+
+# ---------------- Funções de Busca ----------------
+def buscar_cedente():
+    termo = entry_busca.get().strip().lower()
+    for i in tabela_busca.get_children():
+        tabela_busca.delete(i)
+    if not termo:
+        return
+    filtrados = [r for r in registros if termo in r["cedente"].lower() or termo in r["codigo"].lower()]
+    for r in filtrados:
+        tabela_busca.insert("", "end", values=(
+            r["codigo"],
+            r["cedente"],
+            r["transportadora"],
+            r["emissao"].strftime("%d/%m/%Y"),
+            r["embarque"].strftime("%d/%m/%Y"),
+            r["dias"]
+        ))
+
+# ---------------- Exportar Excel ----------------
+def exportar_excel():
+    if not registros:
+        messagebox.showinfo("Exportar", "Nenhum dado para exportar.")
+        return
+    filepath = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx")])
+    if filepath:
+        df = pd.DataFrame([{
+            "Código": r["codigo"],
+            "Cedente": r["cedente"],
+            "Transportadora": r["transportadora"],
+            "Data de Emissão": r["emissao"].strftime("%d/%m/%Y"),
+            "Data de Embarque": r["embarque"].strftime("%d/%m/%Y"),
+            "Dias": r["dias"]
+        } for r in registros])
+        df.to_excel(filepath, index=False)
+        messagebox.showinfo("Exportar", f"Dados exportados com sucesso para:\n{filepath}")
+        try:
+            os.startfile(filepath)  # Windows
+        except AttributeError:
+            os.system(f'open "{filepath}"')  # Mac/Linux
+
+# ---------------- Interface ----------------
+janela = tk.Tk()
+janela.title("Controle de Emissão e Embarque")
+janela.geometry("1200x700")
+
+notebook = ttk.Notebook(janela)
+notebook.pack(fill="both", expand=True)
+
+# Aba Cadastro
+aba_cadastro = tk.Frame(notebook)
+notebook.add(aba_cadastro, text="Cadastro")
+
+frame_top = tk.Frame(aba_cadastro)
+frame_top.pack(pady=10)
+tk.Label(frame_top, text="Código Cedente").grid(row=0, column=0)
+entry_codigo = tk.Entry(frame_top, width=15)
+entry_codigo.grid(row=0, column=1)
+tk.Label(frame_top, text="Cedente").grid(row=0, column=2)
+entry_cedente = tk.Entry(frame_top, width=20)
+entry_cedente.grid(row=0, column=3)
+tk.Label(frame_top, text="Transportadora").grid(row=0, column=4)
+entry_transportadora = tk.Entry(frame_top, width=20)
+entry_transportadora.grid(row=0, column=5)
+tk.Label(frame_top, text="Emissão (DD/MM/AAAA)").grid(row=0, column=6)
+entry_emissao = tk.Entry(frame_top, width=15)
+entry_emissao.grid(row=0, column=7)
+tk.Label(frame_top, text="Embarque (DD/MM/AAAA)").grid(row=0, column=8)
+entry_embarque = tk.Entry(frame_top, width=15)
+entry_embarque.grid(row=0, column=9)
+
+frame_buttons = tk.Frame(aba_cadastro)
+frame_buttons.pack()
+tk.Button(frame_buttons, text="Adicionar", command=adicionar_registro).grid(row=0, column=0, padx=5)
+tk.Button(frame_buttons, text="Editar", command=editar_registro).grid(row=0, column=1, padx=5)
+tk.Button(frame_buttons, text="Deletar", command=deletar_registro).grid(row=0, column=2, padx=5)
+tk.Button(frame_buttons, text="Exportar Excel", command=exportar_excel).grid(row=0, column=3, padx=5)
+
+colunas = ("Código", "Cedente", "Transportadora", "Emissão", "Embarque", "Dias")
+tabela_cadastro = ttk.Treeview(aba_cadastro, columns=colunas, show="headings", height=15)
+for col in colunas:
+    tabela_cadastro.heading(col, text=col)
+    tabela_cadastro.column(col, anchor="center", width=150)
+tabela_cadastro.pack(pady=10, fill="both", expand=True)
+tabela_cadastro.bind("<<TreeviewSelect>>", selecionar_registro)
+
+# Aba Busca
+aba_busca = tk.Frame(notebook)
+notebook.add(aba_busca, text="Buscar Cedente")
+tk.Label(aba_busca, text="Digite nome ou código do cedente:").pack(pady=5)
+entry_busca = tk.Entry(aba_busca, width=40)
+entry_busca.pack()
+tk.Button(aba_busca, text="Buscar", command=buscar_cedente).pack(pady=5)
+
+tabela_busca = ttk.Treeview(aba_busca, columns=colunas, show="headings", height=15)
+for col in colunas:
+    tabela_busca.heading(col, text=col)
+    tabela_busca.column(col, anchor="center", width=150)
+tabela_busca.pack(pady=10, fill="both", expand=True)
+
+# Carregar registros salvos
+carregar_dados()
+atualizar_tabela_cadastro()
+
+janela.mainloop()
